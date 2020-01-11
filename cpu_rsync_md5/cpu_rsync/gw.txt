@@ -1,0 +1,691 @@
+\documentclass[10pt,article,onecolumn]{IEEEtran}
+
+\usepackage{layouts}
+\usepackage{multirow}
+\usepackage{epsfig}
+\usepackage{graphicx}
+\usepackage{caption}
+
+\usepackage{graphics}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{tabu}
+\usepackage{color,xcolor}
+% newcommand defined by Xiaoyang Guo
+\newcommand*{\tabref}[1]{\tablename~\ref{#1}}
+\newcommand*{\figref}[1]{\figurename~\ref{#1}}
+\newcommand*{\secref}[1]{Sec.~\ref{#1}}
+
+\usepackage{cite}
+
+
+
+\ifCLASSINFOpdf
+
+\else
+
+\fi
+
+
+
+% *** SUBFIGURE PACKAGES ***
+\ifCLASSOPTIONcompsoc
+  \usepackage[caption=false,font=normalsize,labelfont=sf,textfont=sf]{subfig}
+\else
+  \usepackage[caption=false,font=footnotesize]{subfig}
+\fi
+
+
+\hyphenation{op-tical net-works semi-conduc-tor fore-ground}
+
+
+\begin{document}
+
+\title{Three Pillars to Achieve High Performance and Case Study on a Low-Latency Gravitational Waves Detection}
+
+ \author{
+ \IEEEauthorblockN{
+ Xiaoyang Guo\IEEEauthorrefmark{1},
+ Hongyi Chen\IEEEauthorrefmark{1},
+ Qi Chu\IEEEauthorrefmark{2},
+ Zhihui Du\IEEEauthorrefmark{1} and
+ Linqing Wen\IEEEauthorrefmark{2}}
+
+ \IEEEauthorblockA{
+ \IEEEauthorrefmark{1}Department of Computer Science and Technology, Tsinghua University, Beijing 100084, China\\
+Email: xiaoyang.guo1995@gmail.com, chenhy19960524@outlook.com duzh@tsinghua.edu.cn
+ }
+ \IEEEauthorblockA{
+ \IEEEauthorrefmark{2}OzGrav-UWA, Department of Physics and Astrophysics, University of Western Australia, Crawley, WA 6009, Australia\\
+Email: \{qi.chu,linqing.wen\}@uwa.edu.au
+}
+}
+
+
+\maketitle
+
+\begin{abstract}
+Facing the complex scientific problem that requires massive amounts of calculations, researchers rely on high performance computing(HPC) technology. But how to apply this advanced technology efficiently to understand and solve problems is a challenge. In this paper, based on our past experience when tackling scientific computing task, we propose a comprehensive methodology containing three pillars : parallel algorithm, hardware device and optimization strategies. Then, the implementation of this methodology in Gravitational Waves(GW) detection pipeline, in which the data arrives with high velocity and large volumes,is carefully discussed. For parallel algorithm, in addition to the SPIIR parallel model, we adopt a new fine-grained parallel algorithm based on the recurrence relation to parallelize the computation of linear recurrence equation, which is the most time consuming part in filtering process. For device, we choose manycore GPU because of the low-latency requirement and numerous templates and filters in our model. And we spend a whole section discussing the optimization including batch synchronization, coalesced memory access and temporal locality optimization, warp-based kernel and others. As a result, with the fine-grained parallel algorithm and memory access optimization, the filtering part of the GW detection pipeline gets 10$\times$ speedup compared with our former work using the same Pascal GPU. For the coherent post-processing part, a speedup of 12-25$\times$ on the same GPU is achieved by employing multiple strategies to improve memory access and resolve synchronizations between threads. Finally, this work provides general guidelines and specific examples for researchers who need to analyse large scala scientific computing task in their own fields.
+\end{abstract}
+
+\IEEEpeerreviewmaketitle
+
+
+\section{Introduction}
+\label{sec:introduction}
+% introduce three pillars
+
+Scientific computing is a rapidly growing multidisciplinary field that uses advanced computing capabilities to understand and solve complex problems, includes weather forecast, fluid dynamics, molecular interactions, astronomical calculations and engineering design. In all these fields, the data arrives with high velocity and large volumes, which require us to develop tools and technologies to be able to analyse the data. So High Performance Computing(HPC) technology is introduced and becoming increasingly critical to accommodate data growth. With a HPC solution, researchers and organizations can get the analysis result in hours or even minutes rather than weeks.
+
+But we need to point out that developing an effective HPC solution is tough. First of all, one major risk item is that developers may easily fail to see every component needed in designing HPC solution and neglect some important ones. For example, in many people's eyes, a supercomputer is enough to achieve high performance for their computation task. Regarding this kind of bias in designing HPC solution, we propose a general methodology include the following three main pillars, which are supposed to be incorporated in a HPC solution. And the efficiency of our program is dependent on the efficiency of these three components. 
+\begin{itemize}
+  \item Highly Parallel Model and Algorithm: Allow each part of the whole task being calculated independently and simultaneously on many different processing devices.
+  \item Powerful Hardware Device: Machines or hardware devices, that support the computation task, possess a high level of performance compared to a general-purpose processing devices.
+  \item Parallel and Optimized Programming: Specific strategies and optimizations tailored to the implementations of parallel algorithm in device to gain further speedup.
+\end{itemize}
+
+Secondly, one weak component may cause the whole project function inefficiently. This brings out the problem in designing HPC solution that how to consider each component and combine them together to solve our calculation work. Based on this reason, we discuss {\color{red}wait for content}
+
+
+
+Our work aims to provide a clear overview of the work on the different components of the HPC technology and their cooperation, like how to dig into the parallel algorithm, how to choose the appropriate hardware device according to the parallel model, and especially how to apply the specific optimization strategies for synchronization problem, inefficient memory access, resource utilization problem and others when programming the algorithm in hardware device. Compared with other works discussing HPC technology, we make the following two contributions in this paper:
+\begin{itemize}
+  \item This work examines all main components that must be present in designing HPC solution for scientific computation project, unlike other surveys that only focus on single components. 
+  \item With guidelines in these main components, we apply this methodology in a low-latency required computation task: binary-coalescence gravitational wave search, as our detailed case study. Also, we emphasize the cooperation between each component in our example.
+\end{itemize}
+
+The remainder of this article is structured as follows: Section\ref{sec:pillars} identifies three pillars, required in designing HPC solution, and presents a classification in each pillar which provides guideline in our implementation. Section\ref{sec:project} presents the specific implementation and combination of these three pillars in our gravitational wave search project. Then experimental statistics and analysis of the most time-consuming filtering part and post-processing part in this project are presented in Section\ref{sec:experiments}. Finally our conclusions are drawn in Section\ref{sec:conclusion}.
+
+\section{Three Pillars For High Performance Computing}
+\label{sec:pillars}
+\subsection{Highly Parallel Model and Algorithm}
+
+For the same computing task, we can adopt various parallel models and algorithms to solve it. Due to the difference in designing parallel models, the efficiency of these algorithms could be varied greatly. So coming up a fancy and highly parallel model is an interesting intellectual challenge!
+
+We can classify the parallel algorithm into coarse-grained parallel algorithm, medium-grained parallel algorithm and fine-grained parallel algorithm, according to the amount of work performed by the processing elements. Usually, in coarse-grained parallelism, a program is split into large tasks and a large amount of computation takes place in processing elements. This might result in load imbalance, where in certain processors deal with a bulk of the data while others might be idle. Further, coarse-grained parallelism fails to exploit the parallelism in the program as many of the computation is performed sequentially on a processor. The advantage of this type of parallelism is low communication and synchronization overhead. On the other hand, in fine-grained parallelism, a program is broken down to a large number of small tasks. These tasks are assigned individually to many processing elements. The amount of work associated with a parallel task is low and the work is evenly distributed among the processors. Hence, fine-grained parallelism facilitates load balancing and exploit parallelism\cite{barney2010introduction}. Moreover, As each processor processes less data, the number of processors required to perform the complete task is large. This in turn, increases the communication and synchronization overhead. Medium-grained parallelism is a compromise between fine-grained and coarse-grained parallelism\cite{kwiatkowski2001evaluation}.
+
+
+Furthermore, granularity of parallelism is closely tied to the level of processing. A program can be broken down into 4 levels of parallelism instruction level, loop level, sub-routine level and program-level. The highest amount of parallelism is achieved at instruction level, followed by loop-level parallelism. At instruction and loop level, fine-grained parallelism is achieved. At the sub-routine (or procedure) level the grain size is typically a few thousand instructions. Medium-grained parallelism is achieved at sub-routine level. At program-level, parallel execution of programs takes place. Granularity can be in the range of tens of thousands of instructions. Coarse-grained parallelism is used at this level\cite{hwang2007advanced}. As for how to design a parallel algorithm is out the scope of this paper.
+
+\subsection{Powerful Hardware Device}
+
+Nowadays, more powerful hardware devices, including multi-core processors, multi-node cluster and manycore processors like graphics processing unit(GPU) and Xeon Phi, are provided for us to perform scientific computing.
+
+\subsubsection{multi-core processors}
+
+faced with the problem that not being able to increase the clock rate of CPU, the processor manufacturers began to add more cores to processors, rather than continuously trying to increase CPU clock rates or extract more
+instructions per clock through instruction-level parallelism. We have dual, tri, quad, hex, 8, 12, and soon even 16 and 32 cores and so on, which have been widely used.
+
+\subsubsection{multi-node cluster}
+cluster computing became popular in 1990s. By taking a number of commodity PCs and connecting them to a 32-port Ethernet switch, we had up to 32 times the performance of a single machine. Used together, the combined power of many machines hugely outperformed any single machine you could possible buy with a similar budget\cite{cook2012cuda}.
+
+\subsubsection{manycore processors}
+
+Manycore processors, like GPUs and Xeon Phi, are distinct from multi-core processors in being optimised from the outset for a higher degree of explicit parallelism, and for higher throughput at the expense of latency and lower single thread performance.
+
+To explain further, GPUs were originally designed to render detailed real-time visual effects in computer games. With the release of the compute unified device architecture (CUDA) by NVIDIA in the late 2006 and later OpenCL\cite{stone2010opencl}\cite{cook2012cuda}, GPUs have rapidly evolved into general purpose graphics processing units, demonstrating as a powerful and cost-effective hardware device to computationally intensive problems in many areas.
+
+Moreover, Xeon Phi[1],which adopts Intel's Many Integrated Core (MIC) prototype, is a series of x86 manycore processors designed by Intel. Since Xeon Phi was originally based on an earlier GPUs architecture, it shares application areas with GPUs. But the main difference between Xeon Phi and GPUs like Nvidia Tesla is that Xeon Phi, with an x86-compatible core, can, with less modification, run software that was originally targeted at a standard x86 CPU.
+
+{\color{red}Radek (June 18, 2012). "Chip Shot: Intel Names the Technology to Revolutionize the Future of HPC - Intel Xeon Phi Product Family". Intel. Retrieved December 12, 2012.}
+
+\subsection{Parallel and Optimized Programming}
+
+As for the implementation of parallel algorithm in powerful hardware device, usually CUDA or OpenCL programming languages are adopted in manycore processors like GPUs and MPI or OpenMP are implemented in multi-core processors. Also Hadoop is a popular framework for multi-node cluster. In all these modern programming languages or tools, we can see that abstraction has been a trend, where the programmer is further and further removed from the underlying hardware. We can easily deploy the parallel model in devices with little optimization and consequently get a ordinary speed up ratio. However, the deep understanding about how the hardware functions and how to optimize the implementation of the parallel algorithm in hardware can help programmer to extract the best performance from the device. Here, we discuss the optimized strategies commonly used in parallel algorithm implementation from four aspects.
+
+\subsubsection{synchronization optimization}
+Synchronization is common in parallel algorithm in order to reach an agreement or commit to a certain sequence of action among multi-thread. However, when implementing synchronization, we need to stop until all processors reach the point and join up, which may waste a significant time on waiting. As a result, how to remove synchronization is critical to get a highly parallelized program.
+\subsubsection{memory access optimization}
+
+Memory bandwidth and latency are key considerations in almost all applications, and especially important for low latency applications. Bandwidth refers to the amount of data that can be moved to or from a given destination. Latency refers to the time the operation takes to complete. To fully exploit the memory bandwidth and reduce the memory access latency, it is necessary to carefully arrange the data. In detail, loading data in cache ,a high-speed memory bank that is physically close to the processor core, is an effective strategy. The processor does not have to write to the slow global memory and to read it back again, just to ensure data consistency between processor cores. It's just a common introduction to memory access optimization, there are a lot more optimization strategies than the usage of cache. We will discuss further in gravitational wave detection project later.
+
+\subsubsection{resource related optimization}
+
+The main goal here is increasing the active processors and fully deploy the resource of hardware device. On the one hand, programmers maybe unable to exploit all computing powers and leave some processors idle, due to their unappropriate mapping of parallel model to device. On the other hand, because of the limited hardware resources, they are also likely to assign too much work in a single processor, leading to less active and big processors which can be easily be neglected. To conclude, programmers should pay attention to the balance of workload in all processors.
+
+\subsubsection{other optimization}
+There are still many other optimizations, like optimizations reducing data transfers latency between CPUs and GPUs or between different computing nodes and the usage of fast arithmetic function, which rely on the specific problems we are dealing with.
+
+\subsection{Summary}
+
+In this subsection, we summarize the three pillars we discussed above and show the classification and specific examples in \ref{tab:big table}. And approaches within a pillar can complement one another and are not mutually exclusive, for example, developers can not only adopt coarse-grained parallel algorithm in program level but also use a fine-grained parallel algorithm in a big loop inner the program, and they are supposed to use both CPU and GPU to execute a heterogeneous computing.
+
+
+\begin{table}[!t]
+\caption{High Performance Computing from Three Pillars}
+\label{tab:big table}
+\centering
+\normalsize
+\begin{tabu}{c|cccccccc}
+\hline
+\rowfont{\bfseries}
+Aspect& Classification & Examples \\ \hline
+
+\multirow{3}{*}{Parallel Model}
+      & Coarse-grained parallel& Program parallel,Sub-routine parallel\\
+      & Fine-grained parallel & Loop parallel \\
+      & Medium-grained parallel & Instruction parallel\\\hline
+\multirow{3}{*}{Hardware Device}
+      & Multi-core Processors& Intel Core i7-980X, AMD Athlon X2 5000\\
+      & Manycore Processors& GTX980, Xeon Phi \\
+      & Multi-node cluster & Sunway TaihuLight \\\hline
+\multirow{4}{*}{Programming Optimization}
+      & synchronization optimization & Remove synchronization\\
+      & memory access optimization& Cache, Coalesced memory access\\
+      & resource related optimization & Avoid idle threads \\
+      & other optimization & Data transfer, Fast arithmetic function\\
+\hline
+\end{tabu}
+\end{table}
+
+
+
+\section{Gravitational Waves Online Detection Project}
+\label{sec:project}
+In this part, we will introduce the gravitational waves detection project, explain the high performance computing requirement of low-latency online search in this task and discuss how to achieve it from three pillars we mentioned above.
+
+The first direct observation of gravitational waves (GWs) were made in September 2015 by the Laser Interferometric Gravitational-Wave Observatory (LIGO)\cite{gw150914}. Since then, five GWs have been observed with high confidence including the first GW observation from a binary neutron star merger~\cite{gw170817}, {\color{red}which opened up a new window to multi-messenger astronomy with unprecedented power of discovery, in probes of some of the most enigmatic transients in the sky for their emissions in both the electro-magnetic and gravitational wave spectrum. In particular, low-latency detection and localization of GW sources are gaining priority in order to enable prompt electro-magnetic follow-up observations of GW sources\cite{chu2016capturing}. However, the difficult of the low-latency detection in GWs data analysis field is the computational challenge, which is mainly caused by the large parameter space of GW sources.}
+
+To solve this problem, several low-latency detection pipelines have been developed in place which include the MBTA pipeline\cite{mbta}, the LLOID pipeline\cite{lloid}, the PyCBC pipeline\cite{pycbc} and the Summed Parallel Infinite Impulse Response (SPIIR) pipeline\cite{spiir}. Each pipeline has a complete procedure of dealing with raw streaming data and submitting GW triggers to GW database. All of them have achieved latencies of sub-minute during the last LIGO science run.
+
+% SPIIR details and previous works on SPIIR pipeline
+The SPIIR coherent search pipeline (see \figref{fig:pipeline}) that we are studying in this work mainly consists of six parts: data loading, data whitening, SPIIR filtering, coherent post-processing,  veto and clustering of candidate events, candidate submission to the GW database. The main computation of SPIIR pipeline lies in the filtering part and the coherent post-processing part, which account for 52\% and 36\% of the total time consumption respectively. {\color{red}So in order to overcome bottleneck in filtering and post-processing part, we design our HPC solution including the three pillars discussed above and mainly show the programming optimization from four aspects.}
+
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{figures/pipeline.eps}
+\caption{SPIIR gravitational wave detection pipeline}
+\label{fig:pipeline}
+\end{figure*}
+
+
+
+
+
+\subsection{Parallel Algorithm}
+
+\subsubsection{Coarse-grained Parallel Model-SPIIR Method}
+
+The summing up parallel IIR filters(SPIIR) method, instead of using optimal matched filtering method, adopts a group of IIR filters with different time delays to approximate a given matched filter, which has a much lower computational cost. Each IIR filter corresponds to a small segment of the matched filter (see details in \cite{spiir}). The filters will then operate on the data and the filtering output is signal-to-noise ratio (SNR). It has been shown that SPIIR can recover $91\%$ overlap of the SNR values and has been used in former work\cite{yuanliugpu}\cite{guo2017acceleration}\cite{guo2018gpu}. We will briefly introduce it. For detail derivation of the formulas, please refer to\cite{spiir-2}\cite{luan2012towards}.
+
+For simplicity, we only consider for one template and each template can complete the computation task without communication with others. The output of the $l$th IIR filter can be expressed as:
+
+\begin{equation}
+\label{equ:iir}
+y_k^l = a_1^ly_{k-1}^l+b_0^lx_{k-d_l}
+\end{equation}
+where $a_1^l$ and $b_0^l$ are IIR coefficients and $k$ denotes time in discrete form. $x_{k-d_l}$ denotes input with a time delay $d_l$. Then the filtering outputs of the template are given by summing up the outputs of all IIR filters in this template:
+
+\begin{equation}
+\label{equ:iirsum}
+\hat{z}_k = 2\Delta t\sum _ly_k^l
+\end{equation}
+
+The SNR is the absolute value of the SPIIR output, divided by a normalization constant $\sigma$.
+
+\begin{equation}
+\label{equ:snr}
+\ \text{SNR}_k = \frac{\hat{z}_k}{\sigma}
+\end{equation}
+
+Every time the filtering part is executed, one second whitened data from individual detectors are processed sequentially. $N_t$ times calculations are needed for each filter, where $N_t$ denotes the sampling rate of the input data.
+
+We can easily see that each template can run parallel without any communication and each filter in a specific template can also run parallel but require a synchronization at end to sum up. In general, SPIIR model has a huge parallelism allow us to speedup the calculation.
+
+
+\subsubsection{Fine-grained Parallel Model in Recurrence Equations Computation}
+
+Recently, we discover another parallelism in the computation of recurrence equations in each filter. Previously, Each IIR filter needs to calculate every filtering output one after another which is a very straightforward way to calculate the linear recurrence equation in our filtering process and can finish the loop in time proportional to $N_t$ . Actually, more efficient parallel algorithm for general linear recurrence equation has been found\cite{Stpiczynski2012Parallel} which can solve the equation in time proportional to $\sqrt{N_t}$ if computer has enough computation resources. In each filter, we adopt this parallel algorithm which based on the recurrence relation and discuss the situation when $a_1^l$ and $b_0^l$ are complex numbers. The computation of linear recurrence equation in filter $l$ is shown as follows
+
+\begin{equation}
+\begin{cases}
+ \ y_{0,re}^l= b_{0,re}^l \\
+ \ y_{0,im}^l= b_{0,im}^l \\
+ \ y_{k,re}^l = a_{1,re}^l y_{k-1,re}^l - a_{1,im}^l y_{k-1,im}^l + b_{0,re}^l x_{k-d_l}\\
+ \ y_{k,im}^l = a_{1,im}^l y_{k-1,re}^l + a_{1,re}^l y_{k-1,im}^l + b_{0,im}^l x_{k-d_l} , k=1,2,..,N_t\\
+\end{cases}
+\end{equation}
+
+For simplicity, we use $a_{re}$, $a_{im}$, $b_{re}$ and $b_{im}$ to denote $a_{1,re}^l$, $a_{1,im}^l$, $b_{0,re}^l$ and $b_{0,im}^l$ respectively. Let us assume that $N_t=tm$,where $t$ is the number of threads used for this filter and $m$ is the number of $y_i^l$ in each thread. Then we define vectors $Y_{i,re}$, $Y_{i,im}$ as follows:
+
+$Y_{i,re}=(y_{im,re}^l,y_{im+1,re}^l,...,y_{(i+1)m-1,re}^l)^\mathrm{T}$
+and $Y_{i,im}=(y_{im,im}^l,y_{im+1,im}^l,...,y_{(i+1)m-1,im}^l)^\mathrm{T}$
+
+we can easily see that
+\[
+\begin{bmatrix}
+    y_{0,re}^l&\\
+    y_{1,re}^l&\\
+    \vdots    &\\
+    y_{N-1,re}^l&
+\end{bmatrix}
+=
+\begin{bmatrix}
+    Y_{0,re}&\\
+    Y_{1,re}&\\
+    \vdots  &\\
+    Y_{t-1,re}&
+\end{bmatrix}
+\
+\begin{bmatrix}
+    y_{0,im}^l&\\
+    y_{1,im}^l&\\
+    \vdots    &\\
+    y_{N-1,im}^l&
+\end{bmatrix}
+=
+\begin{bmatrix}
+    Y_{0,im}&\\
+    Y_{1,im}&\\
+    \vdots  &\\
+    Y_{t-1,im}&
+\end{bmatrix}
+\]
+
+To better understand the parallelism of this algorithm, let us assume that we can find the following matric:
+\[
+Z=
+\begin{bmatrix}
+    z_{00}   &\cdots&z_{0,t-1}\\
+    \vdots   &\ddots&\vdots \\
+    z_{m-1,0}&\cdots&z_{m-1,t-1}
+\end{bmatrix}\\
+\]
+
+such that $z_{ji}=z_{(j,i),re}+z_{(j,i),re}$, and
+
+\[
+\begin{bmatrix}
+    z_{(0,i),re}&\\
+    \vdots&\\
+    z_{(m-1,i),re}&\\
+\end{bmatrix}
+= Y_{i,re}
+\
+\begin{bmatrix}
+    z_{(0,i),im}&\\
+    \vdots&\\
+    z_{(m-1,i),im}&\\
+\end{bmatrix}
+= Y_{i,im},i=0,1,...,t-1
+\]
+
+According to \cite{Stpiczynski2012Parallel}, based on the recurrence relation, the computation of $z_{k,i}$ can be done with the last value of $i-1$ column $z_{m-1,i-1}$ and record values rather than the previous result $z_{k-1,i}$. We take the computation of $i$th column of matric $Z$, denote as $z_i$ for example.
+
+\begin{equation}
+\begin{cases}
+ \ z_{(0,i),re}=a_{re} z_{(m-1,i-1),re}-a_{im} z_{(m-1,i-1),im}+b_{re} x_{im-d_l}\\
+ \ \ \ \ \ \ \ \ \ \ \ =R_{i,re}[0]z_{(m-1,i-1),re}-R_{i,im}[0]z_{(m-1,i-1),im}+C_{i,re}[0]\\ z_{(1,i),re}=a_{re}z_{(0,i),re}-a_{im}z_{(0,i),im}+b_{re}x_{im+1-d_l}\\
+ \ \ \ \ \ \ \ \ \ \ =a_{re}[a_{re}z_{(m-1,i-1),re}-a_{im}z_{(m-1,i-1),im}+b_{re}x_{im-d_l}]-\\
+ \ \ \ \ \ \ \ \ \ \ \ \ \ a_{im}[a_{im} z_{(m-1,i-1),re}+a_{re} z_{(m-1,i-1),im}+b_{im} x_{im-d_l}]+b_{re}x_{im+1-d_l}\\
+ \ \ \ \ \ \ \ \ \ \ =R_{i,re}[1]z_{(m-1,i-1),re}-R_{i,im}[1]z_{(m-1,i-1),im}+C_{i,re}[1]\\
+ \ ...\\
+ \ z_{(m-1,i),re}=R_{i,re}[m-1]z_{(m-1,i-1),re}-R_{i,im}[m-1]z_{(m-1,i-1),im}+C_{i,re}[m-1]\\
+\end{cases}
+\end{equation}
+where we use $R_{i,re}[k]$, $R_{i,im}[k]$ and $C_{i,re}[k]$, which are called as record values, to denote the coefficients of $z_{(m-1,i-1),re}$, $z_{(m-1,i-1),im}$ and constant coefficient when calculate $z_{(k,i),re}$. Similarly, we use $I_{i,re}[k]$, $I_{i,im}[k]$ and $C_{i,im}[k]$ to denote the coefficients when calculate $z_{(k,i),im}$. The equation (4) has a lot of potential parallelism. Here we give the detailed formulation of parallel algorithm which comprises three steps.
+
+Step 1:
+
+We first calculate $R_{i,re}$, $R_{i,im}$ ,$I_{i,re}$, $I_{i,im}$, $C_{i,re}$, $C_{i,im}$, $i=0,1,..t-1$, which is defined as preparation work for Step 3. These preparation work can be done simultaneously in each thread, $i=0,1,..t-1$.(In parallel)
+
+\begin{equation}
+\begin{cases}
+ \ R_{i,re}[0] = a_{re},\ I_{i,re}[0] = a_{im},\ C_{i,re}[0] = b_{re}\\
+ \ R_{i,im}[0] = a_{im},\ I_{i,im}[0] = a_{re},\ C_{i,im}[0] = b_{im}\\
+ \ R_{i,re}[k] = a_{re}R_{i,re}[k-1] - a_{im}I_{i,re}[k-1]\\
+ \ R_{i,im}[k] = a_{re}R_{i,im}[k-1] + a_{im}I_{i,im}[k-1]\\
+ \ I_{i,re}[k] = a_{im}R_{i,re}[k-1] + a_{re}I_{i,re}[k-1]\\
+ \ I_{i,im}[k] = a_{re}I_{i,im}[k-1] - a_{im}R_{i,im}[k-1]\\
+ \ C_{i,re}[k] = a_{re}C_{i,re}[k-1] - a_{im}C_{i,im}[k-1] + b_{re}x_{im+k-d_l}, k=1,..,m\\
+ \ C_{i,im}[k] = a_{re}C_{i,im}[k-1] + a_{im}C_{i,re}[k-1] + b_{im}x_{im+k-d_l}, i=1,..,t-1\\
+\end{cases}
+\end{equation}
+
+Step 2:
+
+Calculate the last value $z_{(m-1,i),re}$, $z_{(m-1,i),im}$ in each column $z_i$,$i=0,1,..,t-1$. As we already get $z_{(m-1,0),re}$, $z_{(m-1,0),im}$ in step 1, that is $C_{0,re}[m-1],C_{0,im}[m-1]$. Based on $z_{(0,m-1),re},z_{(0,m-1),im}$ and equation (4), we can find the remained last value in each column as follows(Sequentially):
+
+\begin{equation}
+\begin{cases}
+ \ z_{(m-1,i),re} = R_{i,re}[m-1] z_{(m-1,i-1),re} - R_{i,im}[m-1] z_{(m-1,i-1),im} + C_{i,re}[m-1]\\
+ \ z_{(m-1,i),im} = I_{i,re}[m-1] z_{(m-1,i-1),re} + I_{i,im}[m-1] z_{(m-1,i-1),im} + C_{i,im}[m-1], i=1,..,t-1\\
+\end{cases}
+\end{equation}
+
+Step 3:
+
+Calculate the rest $m-1$ values in each column as follows(In parallel):
+
+\begin{equation}
+\begin{cases}
+ \ z_{(k,i),re} = R_{i,re}[k] z_{(m-1,i-1),re} - R_{i,im}[k] z_{(m-1,i-1),im} + C_{i,re}[k]\\
+ \ z_{(k,i),im} = I_{i,re}[k] z_{(m-1,i-1),re} + I_{i,im}[k] z_{(m-1,i-1),im} + C_{i,im}[k], i=1,..,t-1\\
+\end{cases}
+\end{equation}
+
+To get a better understanding of how this parallel algorithm is implemented in one filter, see \figref{fig:one-filter}.
+
+\begin{figure*}[!t]
+\centering
+\subfloat[Implementation of parallel algorithm of one filter]{\includegraphics[width=2.5in]{figures/one_filter.eps}
+\label{fig:one-filter}}
+\hfil
+\subfloat[Implementation of parallel algorithm of one template]{\includegraphics[width=3.5in,height=2in]{figures/one_template.eps}
+\label{fig:one-template}}
+\caption{Implementation of parallel algorithm}
+\label{fig:filtering}
+\end{figure*}
+
+
+
+\subsection{Powerful Manycore Processor GPUs }
+
+{\color{red}Because of numerous templates, containing varied-size IIR filers, in our computational task, we find it can be perfectly mapped into hierarchical structure of blocks and threads in GPUs, a manycore processor device, in a single PC machine. Even though it is easy and acceptable to program a parallel SPIIR model in multi-core CPUs, because of the limited core number, it may unable to support thousands of filters at the same time. As a result, many filters, which can be parallelized and calculated simultaneously, now need to wait for CPU resource and thus cause latency in multi-core CPUs. As for the cluster, it has the ability to support all filters run simultaneously if there are enough machines. However, cluster is likely to have higher latency compared with GPUs in a single machine, resulting from the data transfer and synchronization between nodes to fulfill summation among threads in one template and synchronization among templates.}
+ 
+Based on these reasons, the NVIDIA's GPUs product becomes the best choice in our project. However, it is more difficult to fully utilize GPUs to accelerate an application compared to accelerate using multi-core CPUs since it involves utilization of various levels of memory access and synchronizations between different levels of thread aggregation. So in order to get a better performance in GPUs, it is necessary to have a deep understanding about the architecture of this complex hardware.
+
+The NVIDIA GPU graphics card comprises a number of SMs(Stream Multi Processors). To each SM is attached 8, 32 or more SPs (Stream Processors), depending on the specific architecture of that graphics card. The original 9800 GTX card has eight SMs, giving a total of 128 SPs. SMs are responsible for executing blocks of threads. With massive threads, GPUs are able to perform general mathematical operations efficiently in a single-instruction, multiple-thread (SIMT) fashion,which is akin to single-instruction, multiple-data in that a single instruction controls multi-core.
+
+In addition, the memory structure of GPU is organized in a hierarchical way. Global memory(usually more than 4 GB for recent NVIDIA products) is located off the chip, which allow all threads in SMs to access, and its speed is the slowest in the GPU memory hierarchy. Besides, a special read-only cache which can cache read-only global memory data and reduces the global memory access time. Meanwhile, each SMs has access to a smaller but faster shared memory, is accessible by all threads of the same block. In general, the shared memory has in the order of 1.5 TB/s bandwidth with extremely low latency. Clearly, this is hugely superior to the up to 180 GB/s available from global memory, but around one-fifth of the speed of registers, which is the fastest accessible memory and is local to individual thread. Depending on the particular hardware, there is 8 K, 16 K, 32 K or 64 K of register space per SM for all threads within an SM. Another thing need to pay attention to is that one register is required per variable per thread, which will affect the occupation of GPUs if too many registers are used\cite{cook2012cuda}.
+
+
+
+
+
+\section{Implementation of Parallel Model in GPUs}
+
+We state before that the difference of result of an un-optimized parallel algorithm and that of a highly-optimized one can up to a magnitude, that why we need to propose appropriate optimization strategies to eliminate inefficiency in our implementation. Next we will begin our discussion from four aspects we mentioned before in detail.
+
+\subsection{synchronization optimization}
+
+\subsubsection{Filtering part}
+Figure \ref{fig:batch_b} presents a straightforward implementation of one SPIIR template. It can be seen that in the data processing loop, all the filters in each template must synchronize once after each iteration to obtain one value of SNR. The synchronization among all the filters will greatly reduce the performance of each template.
+
+In Femi GPU architecture, a batched computational model for one template is designed as in Fgure \ref{fig:batch_a} which can significantly reduce the number of synchronizations among all filters in one template. Essentially, a number of SNR values will be calculated in batch instead of one by one. Each filter first accumulates $N_b$ output of $y_l^n$ in shared memory where $n = k , k + 1 , . . . , k + N_b-1$, without calculating the SNR values. In this way, after each synchronization, each redesigned template based on the batched computational model can generate $N_b$ values of SNR in parallel. Only one synchronization is needed to generate $N_b$ values of SNR as opposed to $N_b$ synchronizations needed by the straightforward implementation.
+
+\begin{figure*}[!t]
+\centering
+\subfloat[The straightforward computational model]{\includegraphics[width=2.1in,height=2.5in]{figures/before_batch.eps}
+\label{fig:batch_b}}
+\hfil
+\subfloat[The batched computational model ]{\includegraphics[width=2.1in,height=2.5in]{figures/after_batch.eps}
+\label{fig:batch_a}}
+\caption{Batched synchronization optimization model of one SPIIR template}
+\label{fig:batch ba}
+\end{figure*}
+
+With the more recent Kepler and Maxwell GPU architecture, we found a better hardware supported operation warp-shuffle to get the sum of outputs and reduce the delay of synchronization. The warp-shuffle technique allows threads to read registers from other threads in the same warp. This is a great improvement over the previous higher-latency shared memory exchange within a warp. So for template, whose size is smaller than $32$ filters, this warp shuffle operation can sum up the outputs of all filters without even introduce a explicit synchronization. For the template, whose size is larger than $32$, we still need to use atomic summation in global memory to calculate the output.
+
+{\color{red}[ci chu hua san zhang tu shuo ming wuyouhua, diyiciyouhua he dierciyouhua]}
+
+\subsubsection{Post-processing part}
+we also adopted strategies to remove synchronization in this part. In previous implementation (see \figref{fig:postcoh-old}), foreground and background event search for one candidate are processed in the same CUDA block. For each all-sky search, all threads in the block are used to calculate the maximum coherent SNR $\rho_c$ and synchronizations are required by block-level max-reduction, which consumes a large mount of time.
+
+Considering the computation time for foreground events could be ignored, we only optimize for background events. To avoid synchronization, we rearrange the computation and perform all-sky search only within warps (see \figref{fig:postcoh-new}). Then the maximum coherent SNR could be got by warp-shuffle operations, instead of block-level reduction. Then the number of thread blocks for the new background kernel becomes:
+
+\begin{equation}
+\label{equ:numblocks}
+N_\mathrm{blocks-new} = \left\lceil\frac{CN_{bg}}{N_\mathrm{warps}}\right\rceil
+\end{equation}
+
+where $N_\mathrm{warps}=N_\mathrm{threads}/32$ denotes the number of warps per block and $C$ is the number of candidates. There are totally $CN_{bg}$ background event search tasks for all candidates and these tasks are numbered from $0$ to $CN_{bg}-1$. The $j$th warp of the $i$th thread block performs the all-sky serach for the $(iN_\mathrm{warp}+j)$th task.
+
+After optimization, since all event searches are performed within warps, maximum coherent SNR can be calculated by warp-shuffle operations without explicit block-level synchronizations, by which time wasted by synchronizations is saved.
+
+\begin{figure*}[!t]
+\centering
+\subfloat[Before optimization]{\includegraphics[width=2.5in]{figures/postcoh-old.eps}
+\label{fig:postcoh-old}}
+\hfil
+\subfloat[Remove synchronization]{\includegraphics[width=2.5in]{figures/postcoh-new.eps}
+\label{fig:postcoh-new}}
+\caption{The implementations of the coherent post-processing}
+\label{fig:filtering}
+\end{figure*}
+
+\subsection{memory access optimization}
+
+
+Data access is a critical aspect which can greatly affect the GPU performance. For unoptimized GPU programs, it may take longer to perform memory access than to do the core calculation. The data access pattern of SPIIR filtering is analyzed to improve the GPU data mapping performance. Three types of memory including global memory, read-only data cache and register, are investigated in our implementation. The data access pattern in post-processing part is also optimized following this methodology and the detail of it is shown in our previous work.[yin]
+
+\subsubsection{coalesced global memory access}
+
+In our GPU implementation, record vectors $R_{re}$, $R_{im}$, $I_{re}$, $I_{im}$, $C_{re}$, $C_{im}$ are stored in global memory, because these values cannot be reused by the same thread or by the block. The length of each vector of each filter is $N_t$ and the length of each vector of all filters in one template is $N_t\times N_f$. Take the storage of $R_{re}$ of one template as an example, if the record data $R_{re}$ of each filter are stored sequentially, illustrated in the below of \figref{fig:coal}. In this way, threads in the same block can not access on consecutive memory address which lead to a rapid drop off in memory bandwidth. Actually, more than 90\% of fetched data are discarded in one memory transaction. We only get a ting fraction of the actual bandwidth available on the device and have to issue several times memory fetch to get all the data required. Instead, we store $R_{re}$ in such a form shown in the top of \figref{fig:coal}. In this case, for example, when threads in a warp fetch one float $R_{i,re}[k]$ for different filter in GPU, the device will fetch memory in transactions of 128 bytes and then distribute to each thread, which causing no byte discarded and no need for another memory fetch.
+
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=3.2in]{figures/coales.eps}
+\caption{Global memory access before and after optimization}
+\label{fig:coal}
+\end{figure}
+
+
+\subsubsection{Read only data cache and temporal locality optimization}
+
+The input parameter $x_{k-d_l}$ cannot be reused by the same filter and it is hard to use coalesced global memory access to fetch these inputs for all filters, due to the different time delay $d_l$ in each filter. So they are stored in the CUDA special global memory: read-only data cache to speed up data access. Moreover, the access pattern of $x_{k-d_l}$ has a good temporal and spatial locality in a single filter.For the $l$th filter, data inputs $x_{k-d_l}$, $x_{k+1-d_l}$, $x_{k+2-d_l}$, $...$ are loaded sequentially in the loop and located in continuous memory space. In order to better utilize the temporal locality characteristic, we use vectorized data type to load multiple consecutive data inputs at the same time, as shown in \figref{fig:filtering-new}.
+
+In our implementation, vectorized data type \emph{float4} is used to load 4 data inputs at the same time. The original loop is replaced by a nested loop. Data inputs are batch loaded in the outer loop and IIR filtering for these four inputs is done in the unrolled inner loop sequentially. By this method, the number of memory transactions is decreased and the memory access efficiency is improved. It also introduces a certain amount of instruction-level parallelism through processing more than one element per thread.
+
+
+\begin{figure*}[!t]
+\centering
+\subfloat[Before optimization]{\includegraphics[width=3.2in]{figures/filter-old.eps}
+\label{fig:filtering-old}}
+\hfil
+\subfloat[After optimization]{\includegraphics[width=3.2in]{figures/filter-new.eps}
+\label{fig:filtering-new}}
+\caption{SPIIR filtering before and after optimization}
+\label{fig:filtering}
+\end{figure*}
+
+\subsubsection{Register optimization}
+
+Due to the iterative nature of the IIR filter, $y_k^l$, will be reused by the next iteration. As there are hundreds number of iterations even with the fine-grained parallel algorithm, $y_k^l$ is chosen to be stored into a register to utilize the fastest memory access in GPU. Besides, other input parameters, such as $a_{re}$, $b_{im}$ and delay $d_l $, are reused by each specific thread in the iteration. So these values are also stored in register.
+
+
+
+\subsection{resource related optimization}
+
+\subsubsection{avoid idle threads}
+In LIU's optimization work[14], it considers SPIIR filtering with the number of filters being a few hundred and consequently every template is assigned to one block, namely block-based kernel. However, it is not highly-optimized toward filtering with a small number of filters and wastes computation resource in that block. So in Guo's paper, warp-based kernel method is developed for templates whose size is smaller than 32 filters. For a template with filter number greater than 32 filters, M threads are assigned to this template, where M is rounded to the next multiple of 32 after N. For a template with N no bigger than 32 filters, M threads are also assigned where M is rounded to the next power of 2 after N. Multiple templates may be executed in a warp if they are able to fit into the warp. For small templates (with 5 filters) will be executed within a single warp. With this assignment, it can be guaranteed that the number of idle threads will not be more than 31 in the worst case. In our new fine-grained parallel algorithm, which needs to allocate more threads for a single filter to reduce latency, this GPUs mapping method is also adopted.
+
+
+\subsubsection{increase active threads and occupancy}
+
+On the other hand, in GPUs, we may face resource limitation problem that hardware resource is run out by too many threads and thus decreasing the number of active threads. In post-processing part, we faced this problem that the theoretical occupancy of the program is only 50\% because of too much register usage. Since it is very hard to reduce register usage by modifying the algorithm, we consider limiting the register usage by force, which could be achieved by function qualifiers or compiler options. Here we use \emph{\_\_launch\_bounds\_\_} in CUDA to constraint the minimum blocks per multiprocessor (MinBlocksPerSM) to restrict register usage and increase theoretical occupancy. We can see from \tabref{tab:occpancy-registers} how occupancy varies with the register usage.\footnote{The number of threads per block is set to 256. For our tested GPUs, the numbers of registers per multiprocessor are all 64K.}
+
+\begin{table}[!t]
+\caption{Theoretical Occupancies for Different Register Usage}
+\label{tab:occpancy-registers}
+\centering
+\begin{tabular}{ccc}
+\hline
+MinBlocksPerSM & RegistersPerThread & Occupancy \\
+\hline
+4 & $\leq$64 & $\geq$50.0\% \\
+5 & $\leq$51 & $\geq$62.5\% \\
+6 & $\leq$42 & $\geq$75.0\% \\
+7 & $\leq$36 & $\geq$87.5\% \\
+8 & $\leq$32 & $\geq$100.0\% \\
+\hline
+\end{tabular}
+\end{table}
+
+The disadvantage of limiting register usage by force is that more local memory are used caused by spilled registers. Although the theoretical occupancy is improved, more latencies might be brought in by local memory load and store instructions. The speedup ratios by limiting registers on different GPUs are illustrated in \figref{fig:occupancy}.
+
+\begin{figure}[!t] % use float package if you want it here
+\centering
+\includegraphics[width=2.6in]{figures/occupancy.eps}
+\caption{Speedup ratio by limiting register usage}
+\label{fig:occupancy}
+\end{figure}
+
+Different devices differ in performance. We can see that there could be 1.25 times speedup for some older Kepler devices such as K10 and K40m, while there is no benefit for the new Pascal devices such as P4 and P100.
+
+\subsection{Other optimization}
+
+\subsubsection{Arithmetic optimization}
+
+The program performance is also limited by the hardware arithmetic instruction throughput because of some computationally intensive codes. For example, in post-processing part, in order to optimize arithmetic bottlenecks, the algorithm is first improved to remove useless or repeated calculations. Then intrinsic arithmetic functions are used to replace the regular ones, for example normal division operation \emph{x/y} could be replaced by intrinsic function \emph{\_\_fdividef(x,y)} in CUDA. Intrinsic arithmetic functions are faster but less accurate. After replacing with intrinsic functions, experiments are carried out to verify that the numeric error resulted by intrinsic functions is small enough and would not affect the detection accuracy.
+
+
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Results of SPIIR filtering}
+
+In this subsection, we first show the optimization result including synchronization optimization and resource related optimization in SPIIR filtering, which is completed in Liu's\cite{yuanliugpu} and Guo's\cite{guo2017acceleration} work. Then, we will discuss the new fine-grained parallel algorithm and its memory access optimization in detail.
+
+\subsubsection{Synchronization optimization}
+
+In Liu's work\cite{yuanliugpu}, it states that by applying the batched synchronization optimization in Femi-based GTX 480 GPU, the speedup of SPIIR model can increased from 7.0$\times$ to 25$\times$ compared to the straightforward calculation in CPU. Combined with the warp-shuffle in Guo's paper\cite{guo2017acceleration}, the speedup ratio can have about 2-fold improvement over the shared memory atomic summation in Liu's paper. Also, \figref{fig:warp_and_batch} gives the comparasion of these two methods with different number of batch iteration and different template size. In \figref{fig:batched-opt}, we can see that when iteration number $N_b$ is chosen to be a larger number like 256, the speedup effect would not keep increasing but slightly reduced compared to the number of 128. Because when $N_b$ is large, even though less synchronizations are needed, more memory is required to store the group outputs and thus the choice of $N_b$ is limited by the memory size.
+
+\begin{figure*}[!t]
+\centering
+\subfloat[Performance comparison in parallel summation between warp-shuffle and shared memory(with 4096 templates)]{\includegraphics[width=3.2in]{figures/batched_opt.eps}
+\label{fig:batched-opt}}
+\hfil
+\subfloat[The optimization effect when changing iteration number(with 4096 templates and each has 256 filters)]{\includegraphics[width=3.2in]{figures/warp_shuffle.eps}
+\label{fig:warp_shuffle}}
+\caption{Synchronization optimization}
+\label{fig:warp_and_batch}
+\end{figure*}
+
+
+\subsubsection{Resource related optimization}
+
+The elapsed times of Warp-based kernel and Block-based kernel using Maxwell and Pascal GPUs were tested in \cite{guo2018gpu} against the filtering using a single core of the multi-core CPU. Table 2 shows the speedup ratio of Warp-based kernel in comparison to Block-based kernel with different number of filters for filtering. The GPU hardware upgrade from GTX980 to P100 has brought about 7-11$\times$ in speedup ratio directly for the Warp-based kernel. The Warp-based kernel mapping optimization strategy have brought a 1.5-11$\times$ speedup using the Maxwell GPU, and a 1.5-2.5$\times$ speedup using the Pascal GPU over the previous GPU mapping method.
+
+\begin{table}[!t]
+\caption{Speedup ratios of different GPU kernels compared with the CPU counterpart, using Maxwell and Pascal GPUs}
+\label{tab:speedupfiltering32}
+\centering
+\begin{tabular}{cccccccccccc}
+\hline
+\multicolumn{3}{c}{Time (ms)}&4& 8& 16& 32& 64& 128& 256& 512\\
+\hline
+\multirow{4}{*}{Kernel}
+  &\multirow{2}{*}{Warp-based kernel}
+    &Maxwell&63 & 71 & 61 & 56& 110& 124&126&124\\
+    &&Pascal&71 &115 &200 &377 &657 &695 &714 &758\\
+  &\multirow{2}{*}{Block-based kernel}
+    &Maxwell&6 & 11 & 20 & 38 & 43 & 49& 40 &30\\
+    &&Pascal&52 &85 &149 &279 &347 &335 &346 &321\\\hline
+\end{tabular}
+\end{table}
+
+
+\subsubsection{Results of SPIIR filtering}
+Now we discuss the new fine-grained parallel algorithm. Since our parallel algorithm aims to reduce latency rather than increase throughput, we set the number of templates to 1. We test different situations when there are 32, 64 , 128 , 256 and 512 IIR filters in one template. In this section, we use 32 threads to parallelize the computation of linear recurrence equation in one IIR filter, in next section, we will test the acceleration result with different threads number. The average distance of time delays of adjacent IIR filters is set to $\Delta d=20$. The data sequence length (the value of $N_t$) is set to 4096.
+
+There are three methods to be compared. The first one is the implementation in Guo's work\cite{guo2018gpu} without adopting fine-grained parallel algorithm, denoted as \emph{Previous} and used as our benchmark. Our method adopts parallel algorithm, denoted as \emph{New Parallel}. The further optimization of parallel algorithm with memory access optimization discussed in above is denoted as \emph{Opt Parallel}. These three methods have been tested on a computer with Pascal architecture.
+
+The final results are shown in \tabref{tab:speedupfiltering32} in milliseconds. From the results, we can see fine-grained parallel algorithm improves the speed by a factor of 4.3-8.6$\times$ in one template with different filter number. Memory access optimization can give a further 1.2-2.5$\times$ speedup. By combining parallel algorithm and memory access optimization strategies, we can get a speedup ratio of over 10$\times$ with 32 threads.
+
+\begin{table}[!t]
+\caption{Time Usage of the SPIIR Filtering}
+\label{tab:speedupfiltering32}
+\centering
+\begin{tabular}{c|ccccc}
+\hline
+\multirow{2}{*}{Method} & \multicolumn{5}{c}{Time (ms)} \\
+                        & 32     & 64     & 128     & 256& 512 \\
+\hline
+Previous & 1.286 & 1.531 & 1.549 & 1.562& 1.612 \\
+New Parallel & 0.185 & 0.178 & 0.180 & 0.232 & 0.376 \\
+Opt Parallel & 0.124 & 0.145 & 0.146 & 0.150 & 0.149\\
+\hline
+Final speedup &10.37x&10.55x&10.61x&10.41x&10.81x \\
+\hline
+\end{tabular}
+\end{table}
+
+
+\subsubsection{Result of Different Data Length and Threads Number}
+
+In this section, we test the performance of the optimized parallel algorithm in last section with different data sequence length and threads number. Theoretically, this parallel algorithm can accelerate the computation from $O(N_t)$ to $O(2m+t)$, which is nearly $O(\sqrt{N_t})$. However, the real performance depend on the value of $m$ and $t$, which is shown in \tabref{tab:different threads number}. When the length of data is large, like 131072(4096$\times$32), 262144(4096$\times$64), the speedup ration almost grow linearly as the number of threads increase. But the effect of adding more threads will gradually drop or even be adverse which is clearly shown when data length is 4096. In this case, the time cost of 512 threads is nearly twice the time of 32 threads. Because every thread in block 0 has to calculate 512 values in step 2 and other blocks are blocked. The time spend on serial computation is more than the benefit brought by more parallelism.
+
+In our SPIIR filtering task, the length of data sequence is 4096, so it's enough to use 32 threads for one filter to achieve significant acceleration. If the computation resource is limited, we can choose 16 or 8 threads for one filter. The detailed speedup ratio is shown in \figref{fig:different threads}.
+
+\begin{table}[!t]
+\caption{Time Usage of Optimized Algorithm in Different Data Length and Threads Number(ms)}
+\label{tab:different threads number}
+\centering
+\begin{tabular}{c|cccccccc}
+\hline
+\multirow{2}{*}{Data Length} & \multicolumn{8}{c}{Number of Threads} \\
+                        & 1 & 8 & 16 & 32 & 64 & 128 & 256 & 512 \\
+\hline
+4096   &1.27&0.37&0.19&0.12&0.07&0.07&0.11&0.20\\
+65536  &23.07&6.78&3.53&1.86&1.05&0.62&0.49&0.49\\
+131072 &50.30&18.17&8.86&4.93&2.64&1.47&0.99&0.87\\
+262144 &96.17&38.22&19.27&9.55&4.91&2.87&1.78&1.42\\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{figure}
+\centering
+\includegraphics[width=2.6in]{figures/number_threads.eps}
+\caption{Speedup ratio of different number of threads and data length}
+\label{fig:different threads}
+\end{figure}
+
+
+\subsection{Results of coherent post-processing}
+
+When testing the coherent post-processing part, the number of event candidates $C$ is set to 1000. The number of time-shifted background events $N_{bg}$ for each candidate is 100. The number of sky directions for brute force searching is 12288.
+
+The optimization of coherent post-processing is also implemented from the four aspects we discussed previously: removing synchronizations, arithmetic optimization, decreasing local memory usage, coalesced memory access, improving occupancy. These optimization methods are performed step by step. Here we show the optimization results and for more detail information please refer to[...]. All time usage results are measured in the same configurations in the above and shown in \tabref{tab:speedup-pp}. Better visualization of speedup ratios of each optimization step is shown in \figref{fig:speedup-pp}.
+
+\begin{table}[!t]
+\caption{Time Usage of the Coherent Post-processing}
+\label{tab:speedup-pp}
+\centering
+\begin{tabular}{c|c|cccc}
+\hline
+\multirow{2}{*}{Methodology}& \multirow{2}{*}{Experiment} & \multicolumn{4}{c}{Time (ms)} \\
+                        &&K10     & K40m     & P4     & P100  \\
+
+\hline
+Un-optimized&Original & 1268.64 & 587.31 & 261.2 & 119.23 \\
+\hline
+Synchronization optimization&Remove synchronization & 365.87 & 183.13 & 76.46 & 47.71 \\
+\hline
+Arithmetic optimization &Arithmetic optimization & 173.46 & 75.1 & 41.77 & 17.6 \\
+\hline
+\multirow{2}{*}{Memory access optimization}&Local memory optimization & 88.48 & 41.32 & 26.97 & 9.81 \\
+%Remove divergent branches & 85.02 & 39.83 & 22.11 & 9.64 \\
+&Coalesced memory access & 63.11 & 33.73 & 16.14 & 9.35 \\
+\hline
+Resource optimization&Improve occupancy & 49.68 & 27.25 & 16.14 & 9.35 \\
+%Final Opt & 49.68 & 27.25 & 16.14 & 9.35 \\
+\hline
+&Final speedup & 25.54x & 21.55x & 16.18x & 12.75x \\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=3.2in]{figures/postcoh-speedup.eps}
+\caption{Speedup ratio of the optimized coherent post-processing}
+\label{fig:speedup-pp}
+\end{figure}
+
+From \figref{fig:speedup-pp}, we can see that for first four steps of the optimization, both Kepler and Pascal GPUs benefit a lot and get a speedup of over 12x. Improving occupancy by limiting register usage improves running speed of Kepler GPUs but not for Pascal GPUs. The performance improvement by coalesced memory access for P100 is very small mainly due to the high memory bandwidth and the overhead of SNR matrix transposes.
+
+\section{Conclusion}
+\label{sec:conclusion}
+In this paper, based on our past experience when tackling scientific computing task, we propose a comprehensive methodology for designing HPC solution from parallel algorithm, hardware device and optimization strategies to achieve high performance computing. These three pillars aims to give an overview of how to deal with a problem that has massive amount of computation and strict requirement about computing performance. Then, the concrete implementation of this methodology in an astronomical scientific computing project-GW detection is carefully discussed. These implementation including not only the former optimization work of our group but also the recently discovered fine-grained parallel algorithm. As a result, the SPIIR filtering part of the GW detection pipeline is optimized by parallelizing the computation of recurrence equation and improving memory access efficiency with a speedup of more than 10$\times$ using the same Pascal GPU compared with our former work. For the coherent post-processing part, a speedup of 12-25$\times$ on the same GPU is achieved by employing multiple strategies to improve memory access and resolve synchronizations between threads. Finally, this work provides guidelines and examples for researchers to build and analysis their own large scala scientific computing task.
+
+
+\bibliographystyle{IEEEtran}
+% argument is your BibTeX string definitions and bibliography database(s)
+\bibliography{IEEEabrv,citations}
+
+\end{document}

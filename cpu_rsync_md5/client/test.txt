@@ -1,0 +1,114 @@
+
+<html>
+
+<head>
+<title>Browser test file 001</title>
+</head>
+
+<body bgcolor="#FFFFFF">
+
+<p>No one is harmed by studying mathematics. The only danger is
+becoming so blasé that wonders such as </p>
+
+<pre><code>
+                                 infinity 
+                                  ----- 
+                                   \       1           2 
+                                    )     ---- = 1/6 Pi 
+                                   /        2 
+                                  -----    n 
+        
+</code></pre>
+
+<p>seem commonplace.</p>
+
+<p>No one is harmed by studying mathematics. The only danger is
+becoming so blasé that wonders such as </p>
+
+<p>No one is harmed by studying mathematics. The only danger is
+becoming so blasé that wonders such as </p>
+
+<p>No one is harmed by studying mathematics. The only danger is
+becoming so blasé that wonders such as </p>
+
+<p>No one is harmed by studying mathematics. The only danger is
+becoming so blasé that wonders such as </p>
+
+</body>
+</html>
+
+<html>
+
+<head>
+<titl
+</head>
+
+<body bgcolor="#FFFFFF">
+
+<p>No one is harmed by studying mathematics. The only danger is
+becoming so blasé that wonders such as </p>
+
+<pre><code>
+                                 infinity 
+                                  ----- 
+                                   \       1           2 
+                                    )     ---- = 1/6 Pi 
+                                   /        2 
+                                  -----    n 
+                                  n = 1
+</code></pre>
+
+<p>seem commonplace.</p>uNSNeN5CCCrm3QWn+g_eonp6zIeKjT1D
+
+<p>No one is harmed by studying mathematics. The only danger is
+becoming so blasé that wonders such as </p>
+
+<p>No one is harmed by studying mathematics. The only danger is
+becoming so blasé that wonders such as </p>
+
+<p>No one is harmed by studying mathematics. The only danger is
+becoming so blasé that wonders such as </p>
+
+<p>No one is harmed by studying mathematics. The only danger is
+becoming so blasé that wonders such as </p>
+
+</body>
+</html>
+
+<html>
+
+<head>
+<title>Browser test file 001</title>
+
+
+<body bgcolor="#FFFFFF">
+
+<p>No one is harmed by studying mathematics. The only danger is
+becoming so blasé that wonders such as </p>
+
+<pre><code>
+                                 infinity 
+                                  ----- 
+                                   \       1           2 
+                                    )     ---- = 1/6 Pi 
+                                   /        2 
+                                  -----    n 
+                                  n = 1
+</code></pre>
+
+
+
+<p>No one is harmed by studying mathematics. The only danger is
+becoming so blasé that wonders such as </p>
+
+<p>No one is harmed by studying mathematics. The only danger is
+becoming so blasé that wonders such as </p>
+
+<p>No one is harmed by studying mathematics. The only danger is
+becoming so blasé that wonders such as </p>
+
+<p>No one is harmed by studying mathematics. The only danger is
+becoming so blasé that wonders such as </p>
+
+</body>
+</html>

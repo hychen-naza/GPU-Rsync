@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package rsync;
+
+service Rsync {
+  rpc GenChecksumList (FileHead) returns (FileInfo) {}
+  rpc BuildNewFile (FileBuildInfo) returns (NewFileReply) {}
+}
+
+message FileHead {
+  string filename = 1;
+  int32 chunksize = 2;
+}
+
+message FileBuildInfo{
+  repeated UnmatchChar unmatchinfo = 1;
+  repeated MatchChunk matchinfo = 1;
+  int32 filesize = 3;
+  string filename = 4;
+}
+
+message UnmatchChar{
+  bytes content = 1;
+  int32 pos = 2;
+}
+
+message MatchChunk {
+  int32 chunkid = 1;
+  int32 pos = 2;
+}
+
+message NewFileReply{
+  bool success = 1;
+}

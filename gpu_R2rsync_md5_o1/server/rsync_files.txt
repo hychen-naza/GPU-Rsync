@@ -1,0 +1,16 @@
+./rsyncfiles/testdata1.txt ./rsyncfiles/new_testdata1.txt
+./rsyncfiles/testdata2.txt ./rsyncfiles/new_testdata2.txt
+./rsyncfiles/testdata3.txt ./rsyncfiles/new_testdata3.txt
+./rsyncfiles/testdata4.txt ./rsyncfiles/new_testdata4.txt
+./rsyncfiles/testdata5.txt ./rsyncfiles/new_testdata5.txt
+./rsyncfiles/testdata6.txt ./rsyncfiles/new_testdata6.txt
+./rsyncfiles/testdata7.txt ./rsyncfiles/new_testdata7.txt
+./rsyncfiles/testdata8.txt ./rsyncfiles/new_testdata8.txt
+./rsyncfiles/testdata9.txt ./rsyncfiles/new_testdata9.txt
+./rsyncfiles/testdata10.txt ./rsyncfiles/new_testdata10.txt
+./rsyncfiles/testdata11.txt ./rsyncfiles/new_testdata11.txt
+./rsyncfiles/testdata12.txt ./rsyncfiles/new_testdata12.txt
+./rsyncfiles/testdata13.txt ./rsyncfiles/new_testdata13.txt
+./rsyncfiles/testdata14.txt ./rsyncfiles/new_testdata14.txt
+./rsyncfiles/testdata15.txt ./rsyncfiles/new_testdata15.txt
+./rsyncfiles/testdata16.txt ./rsyncfiles/new_testdata16.txt

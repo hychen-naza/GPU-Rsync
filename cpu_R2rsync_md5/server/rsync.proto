@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package rsync;
+
+service Rsync {
+  rpc CalcuDiff (FileInfo) returns (MatchTokenReply) {}
+  rpc BuildNewFile (UnmatchChunks) returns (NewFileReply) {}
+}
+
+message UnmatchChunks {
+  repeated UnmatchChunkInfo chunkinfo = 1;
+  string filename = 2;
+  int32 filesize = 3;
+}
+
+message UnmatchChunkInfo{
+  int32 pos = 1;
+  bytes content = 2;
+  int32 length = 3;
+}
+
+message NewFileReply{
+  bool success = 1;
+  string filename = 2;
+}
+
+
+message FileInfo {
+  repeated FileChunkInfo chunkinfo = 1;
+  string filename = 2;
+  int32 filesize = 3;
+  int32 chunksize = 4;
+}
+
+message FileChunkInfo {
+  int32 chunkid = 1;
+  int32 checksum1 = 2;
+  bytes checksum2 = 3;
+}
+
+message MatchTokenReply {
+  repeated MatchToken tokeninfo = 1;
+  string filename = 2;
+}
+
+message MatchToken{
+  int32 chunkid = 1;
+}
