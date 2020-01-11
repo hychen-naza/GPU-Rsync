@@ -9,4 +9,4 @@
 - in gpu_R2rsync_md5_o6, I make a better workload balancing between cpu and gpu
 - in gpu_R2rsync_md5_o7, I fix some bugs in file transfer
 - in gpu_R2rsync_md5_o8, I fail to use perfect hash
-- in gpu_R2rsync_md5_o9, I observer the register usage of every thread to avoid the problem of using too many regsiers and data spilling to main memory
+- in gpu_R2rsync_md5_o9, I observe the register usage of every thread to avoid the problem of using too many regsiers and data spilling to main memory
